@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Copy, Check, Terminal, Database, Globe, ExternalLink } from 'lucide-react';
+import { X, Copy, Check, Terminal, Database, Globe, KeyRound } from 'lucide-react';
 import { MasBenchmarkRates } from '../types/sora';
 
 interface BackendIntegrationModalProps {
@@ -23,52 +23,36 @@ export const BackendIntegrationModal: React.FC<BackendIntegrationModalProps> = (
     setTimeout(() => setCopiedSection(null), 2000);
   };
 
-  const sampleExpressCode = `// server.ts or src/api/sora.ts (Express backend proxy)
-import express from 'express';
+  const serverlessSoraSnippet = `// /api/sora.ts (Serverless Function at Root Level)
+import type { IncomingMessage, ServerResponse } from 'http';
 
-const app = express();
-const MAS_SORA_DATASTORE_URL =
-  'https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=9a0bf149-3042-45a4-97c3-9515040a33f2&limit=10&sort=end_of_day%20desc';
+const MAS_DOMESTIC_RATES_ENDPOINT =
+  'https://eservices.mas.gov.sg/apimg-gw/server/monthly_statistical_bulletin_non610mssql/domestic_interest_rates_daily/views/domestic_interest_rates_daily';
 
-// Daily in-memory cache (MAS updates SORA daily at 09:00 SGT)
-let cachedSora: any = null;
-let lastFetchTime = 0;
-const CACHE_TTL_MS = 1000 * 60 * 30; // 30 minutes
+export default async function handler(req: IncomingMessage & any, res: ServerResponse & any) {
+  const masKeyId = process.env.MAS_KEY_ID || process.env.MAS_API_KEY || '';
 
-app.get('/api/sora', async (req, res) => {
-  try {
-    const now = Date.now();
-    if (cachedSora && (now - lastFetchTime < CACHE_TTL_MS)) {
-      return res.json(cachedSora);
-    }
-
-    const response = await fetch(MAS_SORA_DATASTORE_URL);
-    const data = await response.json();
-    const records = data?.result?.records || [];
-
-    if (records.length > 0) {
-      const latest = records[0];
-      cachedSora = {
-        publishedDate: latest.end_of_day,
-        effectiveDate: latest.end_of_day,
-        overnightSora: parseFloat(latest.sora),
-        oneMonthCompounded: parseFloat(latest.sora_comp_1m),
-        threeMonthCompounded: parseFloat(latest.sora_comp_3m),
-        sixMonthCompounded: parseFloat(latest.sora_comp_6m),
-        soraIndex: parseFloat(latest.sora_index),
-        aggregateVolumeMillionSgd: parseFloat(latest.aggregate_volume),
-      };
-      lastFetchTime = now;
-      return res.json(cachedSora);
-    }
-
-    res.status(502).json({ error: 'No records returned from MAS' });
-  } catch (error) {
-    console.error('Failed to fetch MAS rates:', error);
-    res.status(500).json({ error: 'Internal Server Error' });
+  if (!masKeyId) {
+    res.statusCode = 401;
+    return res.end(JSON.stringify({ error: 'MAS_KEY_ID environment variable is missing.' }));
   }
-});
-`;
+
+  const response = await fetch(MAS_DOMESTIC_RATES_ENDPOINT, {
+    method: 'GET',
+    headers: {
+      KeyId: masKeyId,
+      Accept: 'application/json',
+    },
+  });
+
+  const data = await response.json();
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json');
+  return res.end(JSON.stringify(data));
+}`;
+
+  const envSnippet = `# Add this to your root .env file
+MAS_KEY_ID="your_mas_key_id_here"`;
 
   const sampleJsonFormat = JSON.stringify(
     {
@@ -96,10 +80,11 @@ app.get('/api/sora', async (req, res) => {
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900">
-                Backend Integration Architecture
+                Serverless MAS API Connection
               </h3>
               <p className="text-xs text-slate-500">
-                Ready-to-use backend proxy implementation for MAS SORA Datastore
+                Created in <code className="font-mono text-slate-800">/api/sora.ts</code> and{' '}
+                <code className="font-mono text-slate-800">/api/health.ts</code>
               </p>
             </div>
           </div>
@@ -114,37 +99,64 @@ app.get('/api/sora', async (req, res) => {
 
         {/* Modal Body */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-6 text-xs text-slate-700">
-          {/* Architecture Concept */}
-          <div className="space-y-2">
-            <h4 className="font-semibold text-slate-900 text-sm flex items-center gap-2">
-              <Globe className="w-4 h-4 text-emerald-600" />
-              <span>How Frontend & Backend Communicate</span>
-            </h4>
-            <p className="leading-relaxed text-slate-600">
-              The frontend is currently powered by a dual-tier client architecture in{' '}
-              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-900 font-mono">
-                src/services/soraService.ts
-              </code>
-              . It checks for a local proxy route at{' '}
-              <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-900 font-mono">
-                /api/sora
-              </code>
-              . When your backend is ready, simply mount the Express route below, and the frontend
-              will automatically connect seamlessly!
+          {/* Key Setup Instructions */}
+          <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-lg space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-semibold text-emerald-950 text-sm">
+                <KeyRound className="w-4 h-4 text-emerald-600" />
+                <span>Configuring Your MAS API Key</span>
+              </div>
+              <button
+                onClick={() => copyToClipboard(envSnippet, 'env')}
+                className="inline-flex items-center gap-1 text-emerald-800 hover:text-emerald-950 font-medium"
+              >
+                {copiedSection === 'env' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy .env snippet</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <p className="text-emerald-900 leading-relaxed">
+              No API keys are hardcoded in the codebase. Set your MAS Gateway Key in your{' '}
+              <code className="bg-emerald-100/80 px-1 py-0.5 rounded font-mono">.env</code> file or serverless environment:
             </p>
+            <pre className="bg-slate-950 text-emerald-400 p-2.5 rounded font-mono text-[11px]">
+              {envSnippet}
+            </pre>
           </div>
 
-          {/* Express Proxy Snippet */}
+          {/* Endpoint Details */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+            <div className="font-semibold text-slate-900">MAS Gateway Target Endpoint:</div>
+            <div className="font-mono text-[11px] text-slate-700 break-all select-all bg-white p-2 border border-slate-200 rounded">
+              https://eservices.mas.gov.sg/apimg-gw/server/monthly_statistical_bulletin_non610mssql/domestic_interest_rates_daily/views/domestic_interest_rates_daily
+            </div>
+            <div className="text-[11px] text-slate-600 flex items-center gap-2">
+              <span className="font-semibold text-slate-800">Required Header:</span>
+              <code className="bg-slate-200 px-1.5 py-0.5 rounded font-mono text-slate-900">
+                KeyId: &lt;MAS_KEY_ID&gt;
+              </code>
+            </div>
+          </div>
+
+          {/* Serverless Function Structure */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h4 className="font-semibold text-slate-900 text-xs uppercase tracking-wider">
-                1. Express Route Proxy Implementation
+                Active Serverless Function (/api/sora.ts)
               </h4>
               <button
-                onClick={() => copyToClipboard(sampleExpressCode, 'express')}
+                onClick={() => copyToClipboard(serverlessSoraSnippet, 'serverless')}
                 className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-medium"
               >
-                {copiedSection === 'express' ? (
+                {copiedSection === 'serverless' ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
                     <span className="text-emerald-600">Copied!</span>
@@ -158,15 +170,15 @@ app.get('/api/sora', async (req, res) => {
               </button>
             </div>
             <pre className="bg-slate-950 text-slate-200 p-4 rounded-lg overflow-x-auto font-mono text-[11px] leading-relaxed border border-slate-800">
-              {sampleExpressCode}
+              {serverlessSoraSnippet}
             </pre>
           </div>
 
-          {/* Target JSON Payload Specification */}
+          {/* Target Output Schema */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <h4 className="font-semibold text-slate-900 text-xs uppercase tracking-wider">
-                2. Expected JSON Response Schema (/api/sora)
+                Normalized JSON Output (/api/sora)
               </h4>
               <button
                 onClick={() => copyToClipboard(sampleJsonFormat, 'json')}
@@ -189,17 +201,6 @@ app.get('/api/sora', async (req, res) => {
               {sampleJsonFormat}
             </pre>
           </div>
-
-          {/* Official MAS API Source */}
-          <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-1.5">
-            <div className="font-semibold text-slate-900">Official MAS Open API Endpoint:</div>
-            <div className="font-mono text-[11px] text-slate-600 break-all select-all bg-white p-2 border border-slate-200 rounded">
-              https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=9a0bf149-3042-45a4-97c3-9515040a33f2
-            </div>
-            <div className="text-[11px] text-slate-500">
-              Published every Singapore business day at 09:00 SGT for the preceding business day.
-            </div>
-          </div>
         </div>
 
         {/* Modal Footer */}
@@ -215,3 +216,4 @@ app.get('/api/sora', async (req, res) => {
     </div>
   );
 };
+

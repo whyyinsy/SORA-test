@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { MasBenchmarkRates } from '../types/sora';
 import { MOCK_DAILY_SORA_RATES } from '../data/mockMasSoraData';
 import { fetchLiveMasRates } from '../services/soraService';
-import { Database, RefreshCw, CheckCircle2, AlertTriangle, ExternalLink, Code } from 'lucide-react';
+import { Database, RefreshCw, CheckCircle2, AlertTriangle, ExternalLink, Code, Activity, Key, Send } from 'lucide-react';
 
 interface RatesApiInspectorProps {
   currentRates: MasBenchmarkRates;
@@ -20,6 +20,47 @@ export const RatesApiInspector: React.FC<RatesApiInspectorProps> = ({
   const [isTestingFetch, setIsTestingFetch] = useState(false);
   const [fetchStatusMessage, setFetchStatusMessage] = useState<string | null>(null);
 
+  // Serverless test state
+  const [healthStatus, setHealthStatus] = useState<any>(null);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [testKeyIdInput, setTestKeyIdInput] = useState('');
+  const [testApiResult, setTestApiResult] = useState<any>(null);
+  const [isCallingWithKey, setIsCallingWithKey] = useState(false);
+
+  const checkHealth = async () => {
+    setIsCheckingHealth(true);
+    try {
+      const res = await fetch('/api/health');
+      const data = await res.json();
+      setHealthStatus(data);
+    } catch (err: any) {
+      setHealthStatus({ status: 'error', error: err.message });
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
+
+  const handleTestWithKeyId = async () => {
+    setIsCallingWithKey(true);
+    setTestApiResult(null);
+    try {
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (testKeyIdInput.trim()) {
+        headers['KeyId'] = testKeyIdInput.trim();
+      }
+      const res = await fetch('/api/sora?nocache=true', { headers });
+      const data = await res.json();
+      setTestApiResult({ statusCode: res.status, ok: res.ok, data });
+      if (res.ok && data.threeMonthCompounded !== undefined) {
+        onRatesUpdated(data, 'backend');
+      }
+    } catch (err: any) {
+      setTestApiResult({ statusCode: 500, ok: false, data: { error: err.message } });
+    } finally {
+      setIsCallingWithKey(false);
+    }
+  };
+
   const handleTestApiCall = async () => {
     setIsTestingFetch(true);
     setFetchStatusMessage(null);
@@ -27,12 +68,12 @@ export const RatesApiInspector: React.FC<RatesApiInspectorProps> = ({
       const res = await fetchLiveMasRates();
       onRatesUpdated(res.rates, res.source);
       if (res.source === 'backend') {
-        setFetchStatusMessage('Successfully connected to local backend (/api/sora).');
+        setFetchStatusMessage('Successfully connected to serverless endpoint (/api/sora).');
       } else if (res.source === 'mas_open_api') {
         setFetchStatusMessage('Successfully received live data directly from MAS Datastore API.');
       } else {
         setFetchStatusMessage(
-          'Using authenticated fallback cache (MAS Open API requires backend proxy for CORS in browser environments).'
+          'Using authenticated fallback cache (Configure MAS_KEY_ID in .env or test with custom KeyId below).'
         );
       }
     } catch {
@@ -50,14 +91,17 @@ export const RatesApiInspector: React.FC<RatesApiInspectorProps> = ({
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-800 uppercase tracking-wider">
               <Database className="w-4 h-4 text-emerald-600" />
-              <span>MAS SORA Data Integration Console</span>
+              <span>MAS SORA Serverless Integration Console</span>
             </div>
             <h2 className="text-xl font-bold text-slate-900 mt-1">
-              Monetary Authority of Singapore (MAS) Data Feed
+              Monetary Authority of Singapore (MAS) Gateway
             </h2>
             <p className="text-xs text-slate-600 mt-1 max-w-2xl">
-              Published every Singapore business day at 09:00 SGT. Administered and computed by MAS
-              using volume-weighted average of overnight interbank SGD transactions.
+              Serverless endpoints active in <code className="font-mono text-slate-800">/api/sora.ts</code> and{' '}
+              <code className="font-mono text-slate-800">/api/health.ts</code>. Target MAS Endpoint:{' '}
+              <span className="font-mono text-[11px] text-slate-800">
+                domestic_interest_rates_daily/views/domestic_interest_rates_daily
+              </span>
             </p>
           </div>
 
@@ -68,7 +112,7 @@ export const RatesApiInspector: React.FC<RatesApiInspectorProps> = ({
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors shadow-xs"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isTestingFetch ? 'animate-spin' : ''}`} />
-              <span>{isTestingFetch ? 'Querying MAS...' : 'Test Fetch Live Data'}</span>
+              <span>{isTestingFetch ? 'Querying...' : 'Fetch Live Rates'}</span>
             </button>
 
             <button
@@ -76,7 +120,7 @@ export const RatesApiInspector: React.FC<RatesApiInspectorProps> = ({
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
             >
               <Code className="w-3.5 h-3.5 text-slate-600" />
-              <span>Backend Spec</span>
+              <span>API Details</span>
             </button>
           </div>
         </div>
@@ -85,6 +129,90 @@ export const RatesApiInspector: React.FC<RatesApiInspectorProps> = ({
           <div className="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{fetchStatusMessage}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Live Serverless Endpoint Tester Card */}
+      <div className="bg-white p-5 sm:p-6 rounded-xl border border-slate-200 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-emerald-600" />
+            <h3 className="text-sm font-semibold text-slate-900">
+              Interactive Serverless Endpoint Tester (/api/sora & /api/health)
+            </h3>
+          </div>
+          <button
+            onClick={checkHealth}
+            disabled={isCheckingHealth}
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded transition-colors"
+          >
+            <Activity className={`w-3 h-3 ${isCheckingHealth ? 'animate-spin text-emerald-600' : ''}`} />
+            <span>Check /api/health</span>
+          </button>
+        </div>
+
+        {healthStatus && (
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs">
+            <div className="flex items-center justify-between text-slate-600 mb-1">
+              <span>Health Status:</span>
+              <span className={healthStatus.status === 'ok' ? 'text-emerald-600 font-bold' : 'text-red-600'}>
+                {healthStatus.status?.toUpperCase()}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-500">
+              MAS_KEY_ID In Environment:{' '}
+              <strong className={healthStatus.masKeyConfigured ? 'text-emerald-700' : 'text-amber-600'}>
+                {healthStatus.masKeyConfigured ? 'Configured' : 'Not Set in .env'}
+              </strong>
+              {healthStatus.masKeyIdMasked && ` (${healthStatus.masKeyIdMasked})`}
+            </div>
+          </div>
+        )}
+
+        {/* Test KeyId Header Input */}
+        <div className="space-y-2 pt-2">
+          <label className="block text-xs font-semibold text-slate-700">
+            Test Request with KeyId Header
+          </label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Key className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="password"
+                placeholder="Paste your MAS KeyId to test (or configure in .env as MAS_KEY_ID)..."
+                value={testKeyIdInput}
+                onChange={(e) => setTestKeyIdInput(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono text-slate-900 focus:outline-none focus:border-emerald-600 focus:bg-white"
+              />
+            </div>
+            <button
+              onClick={handleTestWithKeyId}
+              disabled={isCallingWithKey}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors whitespace-nowrap"
+            >
+              <Send className={`w-3.5 h-3.5 ${isCallingWithKey ? 'animate-spin' : ''}`} />
+              <span>Send /api/sora Request</span>
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500">
+            Sends an HTTP GET request to <code className="font-mono text-slate-700">/api/sora</code> with header{' '}
+            <code className="font-mono text-slate-700">KeyId: &lt;value&gt;</code>.
+          </p>
+        </div>
+
+        {/* Result from /api/sora test */}
+        {testApiResult && (
+          <div className="mt-3 p-3.5 bg-slate-950 text-slate-200 rounded-lg border border-slate-800 font-mono text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2 text-[11px]">
+              <span className="text-slate-400">Response Status:</span>
+              <span className={testApiResult.ok ? 'text-emerald-400 font-bold' : 'text-amber-400 font-bold'}>
+                HTTP {testApiResult.statusCode}
+              </span>
+            </div>
+            <pre className="overflow-x-auto text-[11px] text-emerald-300 max-h-48 leading-relaxed">
+              {JSON.stringify(testApiResult.data, null, 2)}
+            </pre>
           </div>
         )}
       </div>
@@ -190,3 +318,4 @@ export const RatesApiInspector: React.FC<RatesApiInspectorProps> = ({
     </div>
   );
 };
+

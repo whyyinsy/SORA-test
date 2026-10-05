@@ -329,13 +329,13 @@ export function calculateTdsr(inputs: TdsrInputs): TdsrResult {
 
 /**
  * Service to retrieve MAS SORA data.
- * Ready for future backend integration via proxy `/api/sora` or direct MAS Open API.
+ * Ready for serverless connection via `/api/sora` or direct fallback.
  */
 export async function fetchLiveMasRates(
   backendProxyUrl: string = '/api/sora'
 ): Promise<{ rates: MasBenchmarkRates; source: 'backend' | 'mas_open_api' | 'fallback_cache' }> {
   try {
-    // 1. Try local/configured backend proxy first if available
+    // 1. Query serverless /api/sora endpoint first
     const response = await fetch(backendProxyUrl, {
       method: 'GET',
       headers: { Accept: 'application/json' },
@@ -343,15 +343,29 @@ export async function fetchLiveMasRates(
 
     if (response.ok) {
       const data = await response.json();
-      return { rates: data, source: 'backend' };
+      if (data && (data.threeMonthCompounded !== undefined || data.overnightSora !== undefined)) {
+        return {
+          rates: {
+            publishedDate: data.publishedDate || INITIAL_MAS_BENCHMARK_RATES.publishedDate,
+            effectiveDate: data.effectiveDate || INITIAL_MAS_BENCHMARK_RATES.effectiveDate,
+            overnightSora: Number(data.overnightSora ?? INITIAL_MAS_BENCHMARK_RATES.overnightSora),
+            oneMonthCompounded: Number(data.oneMonthCompounded ?? INITIAL_MAS_BENCHMARK_RATES.oneMonthCompounded),
+            threeMonthCompounded: Number(data.threeMonthCompounded ?? INITIAL_MAS_BENCHMARK_RATES.threeMonthCompounded),
+            sixMonthCompounded: Number(data.sixMonthCompounded ?? INITIAL_MAS_BENCHMARK_RATES.sixMonthCompounded),
+            soraIndex: Number(data.soraIndex ?? INITIAL_MAS_BENCHMARK_RATES.soraIndex),
+            aggregateVolumeMillionSgd: Number(data.aggregateVolumeMillionSgd ?? INITIAL_MAS_BENCHMARK_RATES.aggregateVolumeMillionSgd),
+            isCustomOverride: false,
+          },
+          source: 'backend',
+        };
+      }
     }
   } catch {
-    // Backend not running yet - expected in frontend-only development mode
+    // Serverless endpoint not ready or key not set
   }
 
   try {
-    // 2. Try direct public MAS Open Data API endpoint
-    // Dataset: Singapore Overnight Rate Average (SORA)
+    // 2. Direct fallback dataset from verified MAS published datastore
     const masUrl =
       'https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=9a0bf149-3042-45a4-97c3-9515040a33f2&limit=5&sort=end_of_day%20desc';
 

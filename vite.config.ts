@@ -5,7 +5,39 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'serverless-api-dev-middleware',
+        configureServer(server) {
+          server.middlewares.use(async (req, res, next) => {
+            const urlPath = req.url?.split('?')[0];
+            if (urlPath === '/api/health') {
+              try {
+                const mod = await server.ssrLoadModule('/api/health.ts');
+                return await mod.default(req, res);
+              } catch (err: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ error: err?.message || String(err) }));
+              }
+            }
+            if (urlPath === '/api/sora') {
+              try {
+                const mod = await server.ssrLoadModule('/api/sora.ts');
+                return await mod.default(req, res);
+              } catch (err: any) {
+                res.statusCode = 500;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify({ error: err?.message || String(err) }));
+              }
+            }
+            next();
+          });
+        },
+      },
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
@@ -20,3 +52,4 @@ export default defineConfig(() => {
     },
   };
 });
+
