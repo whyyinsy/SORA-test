@@ -1,0 +1,6 @@
+{
+  "name": "SORA Precision - Singapore Overnight Rate Calculator",
+  "description": "Singapore MAS-backed SORA interest rate calculator for loans, mortgages, overnight compounding, and amortization schedules.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
